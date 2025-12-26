@@ -1,0 +1,153 @@
+// models/Product.js
+const mongoose = require("mongoose");
+const { ObjectId } = mongoose.Schema.Types;
+
+const UiReviewSchema = new mongoose.Schema(
+  {
+    rating: { type: Number, min: 1, max: 5 },
+    title: String,
+    comment: String,
+    reviewer: String,
+    location: String,
+    date: String, // display-friendly "Feb, 2021" style
+    likes: { type: Number, default: 0 },
+    dislikes: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
+const UiSellerSchema = new mongoose.Schema(
+  {
+    name: String,
+    rating: { type: Number, min: 0, max: 5, default: 0 },
+    reviewsCount: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
+const UiRatingSummarySchema = new mongoose.Schema(
+  {
+    counts: {
+      5: { type: Number, default: 0 },
+      4: { type: Number, default: 0 },
+      3: { type: Number, default: 0 },
+      2: { type: Number, default: 0 },
+      1: { type: Number, default: 0 },
+    },
+    total: { type: Number, default: 0 },
+    avg: { type: Number, min: 0, max: 5, default: 0 },
+  },
+  { _id: false }
+);
+
+const UiColorSchema = new mongoose.Schema(
+  {
+    name: String,
+    img: String, // small swatch image
+  },
+  { _id: false }
+);
+
+const UISchema = new mongoose.Schema(
+  {
+    seller: UiSellerSchema,
+    offers: [String],
+    highlights: [String],
+    colorOptions: [UiColorSchema],
+    sizes: [String],
+    reviews: [UiReviewSchema],
+    ratingSummary: UiRatingSummarySchema,
+  },
+  { _id: false }
+);
+
+const ProductSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, index: true },
+    description: String,
+    price: { type: Number },
+    stock: { type: Number, default: 0 },
+    SKU: { type: String, unique: true, sparse: true },
+    brand: { type: String, index: true },
+    weight: { type: Number },
+    dimensions: { length: Number, width: Number, height: Number },
+
+    // inside ProductSchema:
+    product_img: { type: String, default: "" },
+    product_img2: { type: String, default: "" },
+    gallery_imgs: [String],
+
+    tags: [{ type: String }],
+    category_id: { type: ObjectId, ref: "Category", required: true },
+    subcategory_id: { type: ObjectId, ref: "Subcategory" },
+
+    is_variant: { type: Boolean, default: false },
+    variants: [{ type: ObjectId, ref: "Variant" }],
+
+    // Admin global vs vendor product
+    is_review: { type: Boolean, default: false },
+    seller_id: { type: ObjectId, ref: "Vendor", default: null, index: true },
+    is_global: { type: Boolean, default: false, index: true },
+    // Ratings & specs
+    rating_avg: { type: Number, min: 0, max: 5, default: 0, index: true },
+    rating_count: { type: Number, default: 0 },
+    specs: [{ type: String }], // bullet points
+
+    // Pricing bundle for MRP/sale/discount label
+    priceInfo: {
+      mrp: { type: Number, default: 0 },
+      sale: { type: Number, default: 0 },
+      discountText: { type: String }, // e.g., "23% off"
+    },
+
+    // Offers / flags
+    exchangeOffer: { type: String },
+    gstInvoice: { type: Boolean, default: false, index: true },
+    deliveryIn1Day: { type: Boolean, default: false, index: true },
+    assured: { type: Boolean, default: false },
+    bestseller: { type: Boolean, default: false },
+    productId: { type: String, index: true, sparse: true },
+
+    // Attribute used in filters
+    ram: { type: Number, default: 0, index: true },
+    created_at: { type: Date, default: Date.now },
+    updated_at: { type: Date, default: Date.now },
+  },
+  { timestamps: false }
+);
+
+// ---------- Virtuals ----------
+ProductSchema.virtual("cardImage").get(function () {
+  return this.product_img || (this.gallery_imgs && this.gallery_imgs[0]) || "";
+});
+ProductSchema.virtual("oldPrice").get(function () {
+  return (this.priceInfo && this.priceInfo.mrp) || this.price || 0;
+});
+ProductSchema.virtual("salePrice").get(function () {
+  return (this.priceInfo && this.priceInfo.sale) || this.price || 0;
+});
+
+// ---------- Indexes ----------
+ProductSchema.index({ name: "text", brand: "text" });
+ProductSchema.index({ "priceInfo.sale": 1 });
+ProductSchema.index({ created_at: -1 });
+
+// ---------- Hooks ----------
+ProductSchema.pre("save", function (next) {
+  this.updated_at = Date.now();
+  next();
+});
+
+ProductSchema.path("is_global").validate(function (v) {
+  if (v === true) return !this.seller_id;
+  return true;
+}, "Global product cannot have seller_id");
+ProductSchema.path("seller_id").validate(function (v) {
+  if (v) return this.is_global === false;
+  return true;
+}, "seller_id implies is_global=false");
+
+ProductSchema.index({ seller_id: 1, is_global: 1, status: 1 });
+
+const Product = mongoose.model("Product", ProductSchema);
+module.exports = Product;
